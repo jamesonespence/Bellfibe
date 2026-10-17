@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fibe TV Channel Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: sticky search + filter strip over a dense, scannable channel guide (number | name | tier), like a printed TV listing */
+:root {
+  --bg: #f2f4f3;
+  --surface: #ffffff;
+  --fg: #14201e;
+  --muted: #5d6b68;
+  --line: #d8dedc;
+  --accent: #0d5c9e;
+  --accent-fg: #ffffff;
+  --t-starter: #2b7a4b;
+  --t-good: #0d5c9e;
+  --t-better: #6a4aa5;
+  --t-best: #a15c07;
+  --t-other: #55625f;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1615; --surface: #172120; --fg: #e6eeec; --muted: #94a5a1; --line: #2b3a38;
+    --accent: #5aa9ec; --accent-fg: #07131d;
+    --t-starter: #5cc489; --t-good: #5aa9ec; --t-better: #b39af0; --t-best: #e9a54a; --t-other: #9fb0ac;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1615; --surface: #172120; --fg: #e6eeec; --muted: #94a5a1; --line: #2b3a38;
+  --accent: #5aa9ec; --accent-fg: #07131d;
+  --t-starter: #5cc489; --t-good: #5aa9ec; --t-better: #b39af0; --t-best: #e9a54a; --t-other: #9fb0ac;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.35;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 32px;
+}
+.wrap { max-width: 760px; margin: 0 auto; }
+header { padding-top: 16px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: 0.01em; margin: 0; line-height: 1.05; }
+.sub { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  padding: 12px 0 8px; border-bottom: 1px solid var(--line);
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.search { position: relative; }
+.search input {
+  width: 100%; font: 500 18px var(--font-body); color: var(--fg); background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 8px; padding: 12px 40px 12px 14px;
+}
+.search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+  border: 0; background: transparent; color: var(--muted); font-size: 22px; cursor: pointer; border-radius: 6px;
+}
+.clear:focus-visible, .chip:focus-visible, .sort button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto; font: 600 15px var(--font-body); color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.lbl { display: block; font: 600 14px var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.chips.wrap { flex-wrap: wrap; overflow: visible; padding: 6px 0 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 14px 14px; margin-top: 10px; }
+.grp { margin-top: 12px; }
+.frow { display: flex; align-items: center; gap: 10px; padding-top: 10px; min-height: 48px; }
+.ftoggle { flex: 0 0 auto; font: 600 15px var(--font-body); color: var(--fg); background: var(--surface); border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.ftoggle[aria-expanded="true"] { border-color: var(--accent); }
+.ftoggle:focus-visible, .reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fcount { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 13px; text-align: center; }
+.fsum { flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reset { flex: 0 0 auto; font: 600 14px var(--font-body); color: var(--accent); background: transparent; border: 0; padding: 8px 4px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0 4px; font-size: 15px; color: var(--muted); }
+.sort { display: flex; gap: 2px; background: var(--line); padding: 2px; border-radius: 6px; }
+.sort button { font: 600 14px var(--font-body); border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.sort button[aria-pressed="true"] { background: var(--surface); color: var(--fg); }
+.note { font-size: 14px; color: var(--muted); margin: 6px 0 4px; }
+ul { list-style: none; margin: 0; padding: 0; }
+li.row {
+  display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; column-gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--line);
+}
+.num { font-family: var(--font-mono); font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; }
+.num small { display: block; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.name { font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.name small { display: block; color: var(--muted); font-size: 14px; font-weight: 400; }
+.tier {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase;
+  white-space: nowrap; color: var(--c, var(--t-other)); border: 1.5px solid var(--c, var(--t-other)); border-radius: 4px; padding: 1px 7px;
+}
+.empty { padding: 36px 0; text-align: center; color: var(--muted); }
+footer { margin-top: 20px; font-size: 14px; color: var(--muted); }
+footer a { color: var(--accent); }
+mark { background: color-mix(in srgb, var(--accent) 24%, transparent); color: inherit; border-radius: 2px; }
+@media (prefers-reduced-motion: no-preference) { .chip, .sort button { transition: background .12s; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Fibe TV Channel Finder</h1>
+    <p class="sub">Bell Fibe TV, Ontario. Lineup current as of February 2026.</p>
+  </header>
+  <div class="bar">
+    <div class="search">
+      <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="Search name or number (TSN, 1401, hockey...)" aria-label="Search channels">
+      <button class="clear" id="clr" aria-label="Clear search" hidden>&times;</button>
+    </div>
+    <div class="frow">
+      <button type="button" id="ftoggle" class="ftoggle" aria-expanded="false" aria-controls="panel">Filters <span id="fcount" class="fcount" hidden></span></button>
+      <span id="fsum" class="fsum">Type, focus, package</span>
+      <button type="button" id="reset" class="reset" hidden>Reset</button>
+    </div>
+  </div>
+  <div id="panel" class="panel" hidden>
+    <div class="grp"><span class="lbl">Type</span><div class="chips wrap" id="g1" role="group" aria-label="Filter by type"></div></div>
+    <div class="grp"><span class="lbl">Focus</span><div class="chips wrap" id="g2" role="group" aria-label="Filter by focus"></div></div>
+    <div class="grp"><span class="lbl">Package</span><div class="chips wrap" id="chips" role="group" aria-label="Filter by package"></div></div>
+  </div>
+  <div class="meta"><span id="count"></span>
+    <div class="sort" role="group" aria-label="Sort order">
+      <button id="s-name" aria-pressed="true">A-Z</button><button id="s-num" aria-pressed="false">Number</button>
+    </div>
+  </div>
+  <p class="note" id="note"></p>
+  <ul id="list"></ul>
+  <p class="empty" id="empty" hidden>No channels match. Try fewer letters or a different package.</p>
+  <footer>
+    Source: Bell Fibe TV channel listing (PDF) for Ontario, <a href="https://www.bell.ca/Styles/all_languages/all_regions/pdf/1-Program_Channel_FIBE_ONT_E.pdf">bell.ca</a>.
+    Type and Focus tags are my own grouping by channel name, not Bell's. Live covers news, weather, legislature and sports channels. Combine Type and Focus to narrow, for example Sports + Wildlife for hunting and fishing channels.
+    Numbers shown as HD / SD. Some channels vary by region or are only offered in select areas (marked *). Check bell.ca for your address.
+  </footer>
+</div>
+
+<script>
+/* Data: "#key|Label|Tier name" starts a section, "@Language" sets a sub label, rows are "Name|SD/HD" (either side may be empty) */
+var RAW = [
+"#starter|Starter|Starter",
+"AMI-Audio|49","AMI-Tele|50","AMITV|48","APTN|214/1214","APTN Languages|/1215","CBC|205/1205","CHCH TV*|211/1211","Citytv|204/1204",
+"CPAC English|512","CPAC French|144","CTV|201/1201","CTV2|202/1202","Global|203/1203","ICI Radio-Canada Tele|101/1101","ICI RDI|117/1117",
+"Meteo Media|105/1105","OMNI.1 Toronto*|206/1206","OMNI.2 Toronto*|207/1207","Ontario Legislative Assembly|513/1513",
+"The Weather Network|505/1505","TV1|1/1001","TV5|134/1134","TVA|103/1103","TVO|209/1209","UNIS|141/1141","UVAGUT TV|/1218",
+"Video On Demand|/1000","YES TV*|651/1651",
+"#good|Good|Good",
+"A&E|615/1615","BNN Bloomberg|504/1504","CBC News Network|502/1502","CMT|575/1575","CP24|503/1503","CTV Comedy Channel East|625/1625",
+"CTV Comedy Channel West|626/1626","CTV Drama Channel|620/1620","CTV News Channel|501/1501","CTV Sci-Fi Channel|627/1627","DayStar Canada|632",
+"Discovery|/1526","E!|621/1621","Game TV|624/1624","HGTV|/1610","History|522/1522","Home Network|600/1600","JTV Jewelry Love|226, 596, 613/1226, 1596, 1613",
+"Kids Suite|547/1547","L'Assemblee nationale du Quebec|143/1143","Merit TV Canada|634/1634","Much|570/1570","Palmares ADISQ par Stingray|/1181",
+"Sportsnet East|406/1406","Sportsnet Ontario|405/1405","Sportsnet Pacific|407/1407","Sportsnet West|408/1408",
+"Stingray Naturescape|/1585","Stingray Country|/1581","Stingray Hits!|/1180","Stingray Loud|/1580","Stingray Retro|/1578","Stingray Vibe|/1579",
+"Stingray Music Stations|901-947","TLN+|699","TLN|/700","TLC|521/1521","The News Forum|514/1514","Toon-A-Vision|565/1565","Treehouse|560/1560",
+"Treehouse On Demand|561","TSC|614/1614","TSN1|401/1401","TSN3 (varies by region)|VARIES","TSN4 (varies by region)|VARIES","TSN5 (varies by region)|VARIES",
+"USA Network|520/1520","Vision TV|213/1213","W Network|602/1602","YTV East|551/1551","YTV West|552","YTV On-Demand|550",
+"#better|Better|Better",
+"ABC|221/1221","Adult Swim|334/1334","AMC|339/1339","BBC News|510/1510","Bravo|411/1411","CBS|222/1222","CNBC|509","CNN|500/1500",
+"Cartoon Network|554/1554","Cottage Life|641/1641","Crime + Investigation|638/1638","CTV Life Channel|619/1619","CTV Nature|523/1523","CTV Wild|525/1525",
+"Documentary Channel|336/1336","Flavour Network|603/1603","Food Network|/1608","FOX|223/1223","FX|331/1331","Golf Channel|416/1416","HLN Headline News|508/1508",
+"Magnolia Network|/1607","Mediaset Italia|698","NBA TV Canada|415/1415","NBC|220/1220","National Geographic|524/1524","NFL Network|448/1448","ONE TV|606/1606",
+"PBS|224/1224","Showcase|616/1616","Sportsnet 4K|/1395","Sportsnet 360|410/1410","Sportsnet ONE|409/1409","Sportsnet ONE 4K|/1396","T+E|527/1527",
+"TSN 4K|/1399","TSN2|402/1402","TSN2 4K|/1398",
+"#best|Best|Best",
+"American Heroes Channel|631/1631","BBC Earth|/1662","BBC First|/1660","Boomerang Network|567/1567","DejaView|636","CTV Speed|/1519","DTOUR|618",
+"Fight Network|423/1423","Fox News Channel|507/1507","FXX|332/1332","Game+|425/1425","Game Show Network|639/1639","H2|629/1629","ID|/1529",
+"Jewish Life TV|751","Lifetime|335/1335","Love Nature|/1661","Makeful|640","MLB Network|450/1450","MovieTime|340/1340","MS NOW|/1506",
+"Nat Geo Wild|530/1530","OUT TV|609/1609","Oxygen True Crime|528/1528","Peachtree TV|294/1294","REV TV Canada|414/1414","RFD-TV Canada|/1535",
+"Silver Screen Classic|337/1337","Slice|601/1601","Sportsman Channel|419/1419","The Cowboy Channel Canada|/1532","The Smithsonian Channel|/1663",
+"Water Television Network|/1533","Wild TV|424/1424",
+"#alacarte|A la carte only|A la carte",
+"Addik|120/1120","Al Jazeera English|516","BBC Canada|635","Big Ten Network|422/1422","Canal D|125/1125","Canal Vie|137/1137","Casa|135/1135","Cinepop|165/1165",
+"CGTN|657","CGTN-Documentary|655","CGTN-Francais|656","CNBC (HD)|/1509","CNN International|511","Disney Channel|/1568","DuckTV|/1546","Elle Fictions|130/1130",
+"Euronews English|/1518","Euronews en Francais|118/1118","Evasion|123/1123","EWTN|633","Fox Sports Racing|421/1421","France 24|113","Frissons TV|166/1166",
+"Golf Channel (a la carte number)|428/1428","Gusto TV|/1611","Historia|124/1124","ICI ARTV|133/1133","ICI Explora|126/1126","Investigation (French)|127/1127",
+"KTLA|238/1238","LCN|115/1115","M6 International|167/1167","Max|131/1131","Mezzo Live|129/1129","Museum TV|/1630","MyTV Buffalo (WNYO)*|293/1293",
+"Planete+|/1128","Prise 2|140/1140","RDS|108/1108","RDS2|109/1109","RDS Info|110/1110","Saisons|/1139","Salt and Light|654","Series+|122/1122",
+"Studiocanal|/1158","TCM|338/1338","TFO|145/1145","TVA Sports|111/1111","TVA Sports 2|112/1112","Teletoon French|153/1153","Temoin|138/1138",
+"The Africa Channel|/1617","The Weather Network Quebec|505/1505","WGN|295/1295","WPIX|297/1297","WSBK|296/1296","Z|121/1121","Zeste|136/1136",
+"#timeshift|Time-shift|Time-shift",
+"ABC West|286/1286","CBC Calgary*|271/1271","CBC Edmonton*|273/1273","CBC Halifax*|266/1266","CBC Montreal*|VARIES","CBC Ottawa*|VARIES","CBC Toronto*|VARIES",
+"CBC Vancouver*|272/1272","CBC Winnipeg*|270/1270","CBS West|287/1287","CHCH TV|VARIES","CHEK Victoria|210","Citytv Montreal*|204/1204","Citytv Toronto*|280/1280",
+"Citytv Vancouver*|281/1281","CTV Calgary*|/1256","CTV Halifax*|251/1251","CTV Moncton*|/1263","CTV Regina*|/1257","CTV Sydney*|/1262","CTV Toronto*|VARIES",
+"CTV Vancouver*|253/1253","CTV Winnipeg*|/1261","CTV2 Atlantic*|258/1258","CTV2 Toronto*|VARIES","CTV2 Vancouver*|260/1260","FaithTV|244/1244","FOX West|288/1288",
+"Global Durham*|VARIES","Global Halifax*|275","Global Kingston*|205/1205","Global Peterborough*|VARIES","Global Toronto*|203/1203","Global Vancouver*|277/1277",
+"ICI Radio-Canada Moncton*|175/1175","ICI Radio-Canada Montreal*|VARIES","ICI Radio-Canada Ottawa*|VARIES","ICI Radio-Canada Toronto*|VARIES",
+"ICI Radio-Canada Vancouver*|178/1178","Joy TV Vancouver|245/1245","NBC West|285/1285","Noovo Montreal|VARIES","NTV|212/1212","OMNI 1 Toronto*|206/1206",
+"OMNI 2 Toronto*|207/1207","PBS West|289/1289","YES Burlington|651","TVA West|173",
+"#movies|Movies & add-ons|Add-on",
+"@Crave",
+"Crave 1|300/1300","Crave 2|303/1303","Crave 3|302/1302","Crave 4|301/1301","Crave On Demand|299/1299","HBO 1|306/1306","HBO 2|307/1307",
+"Super Ecran 1|161/1161","Super Ecran 2|162/1162","Super Ecran 3|163/1163","Super Ecran 4|164/1164","Super Ecran On Demand|160/1160",
+"@Crave with Starz",
+"STARZ|304/1304","STARZ 2|305/1305","STARZ On Demand|308/1308",
+"@Crave with Starz + Super Channel",
+"Crave (combined)|310/1310",
+"@Super Channel",
+"Super Channel Fuse|326/1326","Super Channel Heart & Home|327/1327","Super Channel Quest|329/1329","Super Channel VAULT|328/1328","Super Channel On Demand|325/1325",
+"@Hollywood Suite",
+"Hollywood Suite 70s+|/1315","Hollywood Suite 80s & 90s|/1316","Hollywood Suite 2000s|/1317","Hollywood Suite 2010s+|/1318","Hollywood Suite On Demand|/1314",
+"@Specialty",
+"Acorn TV|/1344","Teletoon+|/1558","Qello Concerts by Stingray|/1588","Shudder|/1346","Stingray Classica|/1577","Stingray Karaoke|/1587","Sundance Now|/1345",
+"#sports|Premium sports|Sports add-on",
+"beIN Sports|/1412","beIN Sports en Espanol|/1413","Big Ten Network|422/1422","Fox Sports Racing|421/1421","Game+|425/1425","HPI-1|/478","HPITV West|/477",
+"HPITV Canada|/475","HPITV International|/476","MLB Extra Innings|1485-1498","NBA League Pass|1471-1481","NFL Sunday Ticket|1451-1460","NHL Centre Ice|1426-1439",
+"Sportsnet World|420/1420","US College Sports|1463-1470","Willow TV|441/1441",
+"#french|French add-ons|French add-on",
+"Addik|120/1120","Canal D|125/1125","Canal Vie|137/1137","Casa|135/1135","CGTN-Francais|656","Cinepop|165/1165","CNV TV|168/1168","Euronews en Francais|118/1118",
+"Evasion|123/1123","France 24|113","Frissons TV|166/1166","Historia|124/1124","ICI ARTV|133/1133","ICI Explora|126/1126","Investigation (French)|127/1127",
+"LCN|115/1115","Max|131/1131","MusiquePlus|130/1130","Planete+|/1128","Prise 2|140/1140","RDS|108/1108","RDS2|109/1109","RDS Info|110/1110","Saisons|/1139",
+"Savoir Media|147/1147","Series+|122/1122","Tele-Quebec|104/1104","Telemag Quebec|119/1119","Teletoon French|153/1153","Temoin|138/1138","TVA Sports|111/1111",
+"TVA Sports 2|112/1112","Z|121/1121","Zeste|136/1136",
+"#intl|International|International",
+"@African","Africa 24|2463","AfroGlobal|2472",
+"@Arabic","2M Maroc|758","Abu Dhabi TV|846","Al Arabiya|2569","Al Jazeera English|516","Al Resalah|2252","BBC Arabic|769","Future TV|763","MBC|2530","MBC Masr|2555",
+"Melody Aflam|764","Melody Drama|766","Melody Hits|765","Rotana Aflam|2538","Rotana Cinema|2539","Rotana Classic|2541","Rotana Clip|2542","Rotana Drama|2551",
+"Rotana Khalijiah|2532","Rotana Mousica|2543","Sky News Arabia|2567",
+"@Caribbean","CaribVision|658","Haiti|2489","WIN TV Caribbean|659",
+"@Chinese (Cantonese)","Canada Chinese TV|730","Fairchild 2|705","Fairchild Television East & West|717","WOW TV|710",
+"@Chinese (Cantonese/Mandarin)","GRT GBA Satellite TV|711",
+"@Chinese (Mandarin)","Beijing TV|713","CCTV Entertainment|714","CCTV-4|720","CGTN-Documentary|655","CGTN-Francais|656","CGTN|657","CNTV|733","Dragon TV|722",
+"Fujian Straits TV|724","Hunan Satellite TV|725","Jiangsu International TV|726","LS Times|729","Momo TV|731","New Tang Dynasty TV|727","Phoenix|715","TalentVision|719",
+"@Croatian","HRT|693",
+"@Filipino","ANC|2156","Cinema One Global|2157","Filipino TV|860","GMA Life TV|858","GMA News International|856","GMA Pinoy TV|857","Kapatid TV|861","The Filipino Channel|859",
+"@German","German Kino Plus|849","Schlager|850",
+"@Greek","4E|2760","Alpha Sat|891","ERT Sat Canada|890","Greek Cinema|2764","Greek Music Channel|653","Mega Cosmos|888","New Greek Television|652","Odyssey 1|889",
+"RIK Sat|2761","Sports Plus|2763","Star|2762",
+"@Hebrew","The Israeli Network|897",
+"@Italian","Mediaset Italia|698","RAI Italia|701","TGCom 24|697","Telebimbi|703","TLN|/700",
+"@Korean","ALL TV|747","ALL TV-K|748",
+"@Portuguese","Benfica TV|886","Festival Portuguese Television (FPTV)|880","CMC TV|893","Globo|883","Record TV|875","RTPI Radio e Televisao|881","SIC Noticias|878","TVI|887",
+"@Russian","CTC|647","Detskiy|877","RTVI|894","Russian Illuzion|899",
+"@Serbian","RTS Sat|688",
+"@South Asian","ATN News|2278","ATN SVBC|2291","ATN Times|788","CBN|796","ET Now|2335","Headlines Today!|789","Set Max|802",
+"@Bengali","ATN Bangla|814","ATN Colors Bangla|839","ATN News Bengali|2350","ATN Sony Aath|816","Channel i Bangla|841","NTV Bangla|815","Zee Bangla|848",
+"@Gujarati","Aastha Television Channel|793","ATN Gujarati|840",
+"@Hindi","Aaj Tak|808","Aapka Colors|790","ABP News International|804","ATN Colors Rishtey|2285","ATN|/811","ATN B4U Movies|809","ATN Food Food|679","ATN Max 2|803",
+"ATN Life|805","ATN Movies OK|810","ATN News18 India|2277","ATN SAB|792","ATN Sports|794","ATN B4U Plus|681","ATN Zoom|791","B4U Music|795","Big Magic International|801",
+"Cricket Plus|797","DD Bharati|642","DD India|643","DD News|650","Filmy|798","Halla Bol!|670","MTV India|680","NDTV 24x7|799","NDTV Good Times|800",
+"Prime Asia Television|/677","Sahara One|812","Sony|/813","Travel XP|2309","Zee Bollywood|/683","Zee Canada|/838","Zee Cinema|785","Zing|837",
+"@Marathi","ATN Colors Marathi|2362","Zee Marathi|2451","Zee Talkies|2452",
+"@Punjabi","ATN Punjabi|818","ATN PM One|821","ATN Punjabi 5|822","ATN Punjabi News|2333","ATN Punjabi Plus|819","ATN Sikh|667","Chakde TV|2323","Channel Punjabi|820",
+"Hum News|666","PTC Punjabi|825","Punjab TV|2331","SSTV|823","Sanjha TV|2424","TV84|2332","Zee Punjabi|669",
+"@Tamil","ATN Tamil|824","ATN Tamil Plus|806","Tamil One|844","Tamil Vision|845","TET (Tamil Ent. TV)|/842","Vanakkam (Tamil One HD)|/676","Zee Tamil|672",
+"@Urdu","ARY Digital|835","ARY News|759","ARY QTV|829","ARY Zauq|760","ATN Urdu|826","Channel Y|828","DD Urdu|644","Geo TV|827","Hum TV|830","Masala TV|831","PTV Global|832",
+"@Spanish","Antena3|2621","AZ Mundo|869","Canal Sur|2633","Caracol Internacional|864","Cinelatino|870","Las Estrellas|863","Mexicanal|2640","NTN24|2641",
+"Nuestra Tele (TV Colombia)|2652","Telefe|2659","Telehit Urbano|866","Telenin~os|874","Teleritmo|2639","TL Novelas America|868","TV Chile|871","TVE|2662","Univision Canada|/867",
+"@Ukrainian","1+1 International|2892","5 Kanal|690","First National|691",
+"@Vietnamese","SBTN|750"
+];
+
+var SEC = {}, ORDER = [], rows = [];
+(function parse() {
+  var key = "", lang = "";
+  RAW.forEach(function (l) {
+    if (l.charAt(0) === "#") {
+      var p = l.slice(1).split("|"); key = p[0]; lang = ""; SEC[key] = { label: p[1], tier: p[2] }; ORDER.push(key);
+    } else if (l.charAt(0) === "@") { lang = l.slice(1); }
+    else {
+      var q = l.split("|"), name = q[0].replace("~", ""), n = q[1] || "", sd = "", hd = "", raw = n;
+      if (n.indexOf("/") > -1) { var z = n.split("/"); sd = z[0]; hd = z[1]; }
+      else if (/^\d{4}$/.test(n) && +n >= 1000) { hd = n; }
+      else { sd = n; }
+      var primary = hd || sd;
+      var sortNum = parseInt(String(primary).replace(/[^0-9]/g, ""), 10); if (isNaN(sortNum)) sortNum = 99999;
+      rows.push({ name: name, sd: sd, hd: hd, key: key, lang: lang, sortNum: sortNum,
+        hay: (name + " " + sd + " " + hd + " " + lang).toLowerCase(), digits: (sd + " " + hd).replace(/[^0-9 ]/g, " ") });
+    }
+  });
+})();
+
+/* Type tags are assigned by channel name. Live = news, weather, legislature and sports channels. */
+var RX = {
+  sports: /tsn|sportsnet|nba|nfl|mlb|golf channel|fight network|^game\+|rev tv|sportsman|^wild tv|big ten|fox sports|^rds|tva sports|bein|hpi|centre ice|college sports|willow|cowboy|rfd|ctv speed|cricket plus|atn sports|sports plus|duck|water television/i,
+  reality: /^tlc$|hgtv|food network|flavour|cottage life|home network|w network|^slice|^e!|bravo|^a&e|lifetime|^history|^h2|^id$|crime \+|oxygen|magnolia|^t\+e|makeful|ctv life|game show|^discovery|^much|game tv|^cmt|^casa|zeste|gusto|dtour|american heroes/i,
+  wild: /nature|ctv wild|nat geo|national geographic|bbc earth|love nature|^wild tv|naturescape|sportsman|duck|water television/i,
+  news: /news|cp24|bnn|cnbc|cnn|hln|al jazeera|euronews|france 24|rds info|cgtn|weather network|meteo|cpac|legislative|assemblee|cbc news/i,
+  movies: /movie|cinepop|cinema|hollywood suite|crave|hbo|starz|super channel|super ecran|^tcm|silver screen|^amc|sundance|shudder|acorn|studiocanal|cinelatino|rotana aflam|filmy|kino|frissons|prise 2|cinema one/i,
+  drama: /comedy|drama|sci-fi|^showcase|^fx|adult swim|^amc|^lifetime|^abc|^cbs|^nbc|^fox$|series\+|^bravo|^ctv$|^ctv2|^global$|^citytv/i,
+  doc: /documentary|nat geo|national geographic|bbc earth|love nature|^history|^h2|smithsonian|american heroes|discovery|ctv nature|ctv wild|^t\+e|^id$|crime \+|oxygen|museum|planete|savoir|^pbs|^tvo/i,
+  kids: /kids|treehouse|ytv|cartoon|boomerang|disney|teletoon|toon-a-vision|telenin|detskiy|telebimbi/i,
+  music: /stingray|^much|^cmt|mezzo|qello|karaoke|musique|axs|b4u music|mtv|melody hits|rotana clip|rotana mousica|palmares|schlager|greek music|zing/i,
+  home: /hgtv|food network|flavour|cottage life|home network|magnolia|makeful|gusto|^casa|zeste|^slice|w network|ctv life/i,
+  crime: /crime|^id$|oxygen|investigation|frissons|^a&e/i,
+  science: /^history|^h2|smithsonian|american heroes|discovery|bbc earth|nat geo|national geographic|museum|savoir|^t\+e|historia/i,
+  faith: /vision tv|daystar|ewtn|salt and light|jewish life|faithtv|temoin|aastha|atn sikh|al resalah|^cbn/i,
+  outdoors: /sportsman|wild tv|duck|water television|rfd|cowboy|cottage life|naturescape|golf channel/i
+};
+rows.forEach(function (r) {
+  var s = RX.sports.test(r.name), n = RX.news.test(r.name);
+  r.t = { sports: s, reality: RX.reality.test(r.name), wild: RX.wild.test(r.name), live: s || n, news: n,
+    movies: RX.movies.test(r.name), drama: RX.drama.test(r.name), doc: RX.doc.test(r.name), kids: RX.kids.test(r.name),
+    music: RX.music.test(r.name), home: RX.home.test(r.name), crime: RX.crime.test(r.name), science: RX.science.test(r.name),
+    faith: RX.faith.test(r.name), outdoors: RX.outdoors.test(r.name) };
+});
+var G1 = [{ id: "any", label: "Any" }, { id: "sports", label: "Sports" }, { id: "reality", label: "Reality TV" }, { id: "movies", label: "Movies" },
+  { id: "drama", label: "Drama & comedy" }, { id: "doc", label: "Documentary" }, { id: "news", label: "News" }, { id: "kids", label: "Kids" }, { id: "music", label: "Music" }];
+var G2 = [{ id: "any", label: "Any" }, { id: "live", label: "Live" }, { id: "wild", label: "Wildlife & nature" }, { id: "outdoors", label: "Outdoors" },
+  { id: "home", label: "Home & food" }, { id: "crime", label: "True crime" }, { id: "science", label: "History & science" }, { id: "faith", label: "Faith" }];
+var TAGLABEL = { sports: "Sports", reality: "Reality", movies: "Movies", drama: "Drama/comedy", doc: "Documentary", news: "News", kids: "Kids", music: "Music",
+  live: "Live", wild: "Wildlife", outdoors: "Outdoors", home: "Home/food", crime: "True crime", science: "History/science", faith: "Faith" };
+
+var CHIPS = [
+  { id: "all", label: "All", keys: null },
+  { id: "starter", label: "Starter", keys: ["starter"] },
+  { id: "good", label: "Good", keys: ["starter", "good"] },
+  { id: "better", label: "Better", keys: ["starter", "good", "better"] },
+  { id: "best", label: "Best", keys: ["starter", "good", "better", "best"] },
+  { id: "alacarte", label: "A la carte", keys: ["alacarte"] },
+  { id: "movies", label: "Movies & add-ons", keys: ["movies"] },
+  { id: "sports", label: "Sports add-ons", keys: ["sports"] },
+  { id: "french", label: "French", keys: ["french"] },
+  { id: "intl", label: "International", keys: ["intl"] },
+  { id: "timeshift", label: "Time-shift", keys: ["timeshift"] }
+];
+var NOTES = {
+  all: "Each channel shows the lowest package that includes it. Higher packages include everything below them.",
+  starter: "Starter package channels.",
+  good: "Good includes everything in Starter.",
+  better: "Better includes everything in Starter and Good.",
+  best: "Best includes everything in Starter, Good and Better.",
+  alacarte: "Channels not in a base package, sold individually. Any channel in a package can also be added a la carte.",
+  movies: "Crave, Super Channel, Hollywood Suite, STARZ and streaming-style specialty channels.",
+  sports: "Premium sports tiers. Channel numbers for multi-channel packages are ranges.",
+  french: "French language add-on channels.",
+  intl: "International and ethnic language channels.",
+  timeshift: "Out-of-market and time-shifted local stations. * means number varies by region or availability."
+};
+var TIERVAR = { starter: "--t-starter", good: "--t-good", better: "--t-better", best: "--t-best" };
+
+var state = { chip: "all", sort: "name", q: "", g1: "any", g2: "any" };
+var $ = function (id) { return document.getElementById(id); };
+var chipsEl = $("chips"), list = $("list"), q = $("q"), clr = $("clr");
+
+CHIPS.forEach(function (c) {
+  var b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = c.label; b.id = "chip-" + c.id;
+  b.setAttribute("aria-pressed", c.id === "all"); b.onclick = function () { state.chip = c.id; render(); }; chipsEl.appendChild(b);
+});
+
+function buildGroup(el, items, field) {
+  items.forEach(function (c) {
+    var b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = c.label; b.id = field + "-" + c.id;
+    b.setAttribute("aria-pressed", c.id === "any");
+    b.onclick = function () { state[field] = c.id; render(); };
+    el.appendChild(b);
+  });
+}
+buildGroup($("g1"), G1, "g1"); buildGroup($("g2"), G2, "g2");
+
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function hl(s, term) {
+  if (!term) return esc(s);
+  var i = s.toLowerCase().indexOf(term);
+  if (i < 0) return esc(s);
+  return esc(s.slice(0, i)) + "<mark>" + esc(s.slice(i, i + term.length)) + "</mark>" + esc(s.slice(i + term.length));
+}
+function numHtml(r) {
+  var a = r.hd || r.sd || "-";
+  var b = (r.hd && r.sd) ? "SD " + r.sd : (r.hd ? "HD" : "");
+  if (a === "VARIES") a = "Varies";
+  return esc(a) + (b ? "<small>" + esc(b) + "</small>" : "");
+}
+
+function render() {
+  var chip = CHIPS.filter(function (c) { return c.id === state.chip; })[0];
+  var term = state.q.trim().toLowerCase();
+  var out = rows.filter(function (r) {
+    if (chip.keys && chip.keys.indexOf(r.key) < 0) return false;
+    if (state.g1 !== "any" && !r.t[state.g1]) return false;
+    if (state.g2 !== "any" && !r.t[state.g2]) return false;
+    if (!term) return true;
+    if (/^\d+$/.test(term)) return (" " + r.digits + " ").indexOf(term) > -1 || r.hay.indexOf(term) > -1;
+    return r.hay.indexOf(term) > -1;
+  });
+  /* in All view, a channel in several sections appears once, under its lowest tier */
+  if (state.chip === "all") {
+    var seen = {}, keep = [];
+    out.forEach(function (r) {
+      var id = r.name.toLowerCase().replace(/\s*\(.*?\)/g, "") + "|" + r.sd + "|" + r.hd;
+      if (!seen[id]) { seen[id] = 1; keep.push(r); }
+    });
+    out = keep;
+  }
+  out.sort(state.sort === "name"
+    ? function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; }
+    : function (a, b) { return a.sortNum - b.sortNum || (a.name < b.name ? -1 : 1); });
+
+  var html = out.slice(0, 600).map(function (r) {
+    var s = SEC[r.key], v = TIERVAR[r.key] || "--t-other";
+    var parts = r.lang ? [r.lang] : [];
+    Object.keys(TAGLABEL).forEach(function (k) { if (r.t[k]) parts.push(TAGLABEL[k]); });
+    var sub = parts.length ? "<small>" + esc(parts.join(" / ")) + "</small>" : "";
+    return '<li class="row"><span class="num">' + numHtml(r) + '</span><span class="name">' + hl(r.name, /^\d+$/.test(term) ? "" : term) + sub +
+      '</span><span class="tier" style="--c:var(' + v + ')">' + esc(s.tier) + "</span></li>";
+  }).join("");
+  list.innerHTML = html;
+  $("empty").hidden = out.length > 0;
+  $("count").textContent = out.length + (out.length === 1 ? " channel" : " channels") + (out.length > 600 ? " (showing 600, narrow your search)" : "");
+  $("note").textContent = NOTES[state.chip];
+  CHIPS.forEach(function (c) { $("chip-" + c.id).setAttribute("aria-pressed", c.id === state.chip); });
+  var act = [];
+  var lab = function (arr, id) { return arr.filter(function (c) { return c.id === id; })[0].label; };
+  if (state.g1 !== "any") act.push(lab(G1, state.g1));
+  if (state.g2 !== "any") act.push(lab(G2, state.g2));
+  if (state.chip !== "all") act.push(chip.label);
+  $("fcount").textContent = act.length; $("fcount").hidden = !act.length;
+  $("fsum").textContent = act.length ? act.join(" + ") : "Type, focus, package";
+  $("reset").hidden = !act.length;
+  G1.forEach(function (c) { $("g1-" + c.id).setAttribute("aria-pressed", c.id === state.g1); });
+  G2.forEach(function (c) { $("g2-" + c.id).setAttribute("aria-pressed", c.id === state.g2); });
+  $("s-name").setAttribute("aria-pressed", state.sort === "name");
+  $("s-num").setAttribute("aria-pressed", state.sort === "num");
+  clr.hidden = !state.q;
+}
+q.addEventListener("input", function () { state.q = q.value; render(); });
+clr.onclick = function () { q.value = ""; state.q = ""; render(); q.focus(); };
+$("ftoggle").onclick = function () {
+  var open = $("panel").hidden; $("panel").hidden = !open; this.setAttribute("aria-expanded", open);
+};
+$("reset").onclick = function () { state.g1 = "any"; state.g2 = "any"; state.chip = "all"; render(); };
+$("s-name").onclick = function () { state.sort = "name"; render(); };
+$("s-num").onclick = function () { state.sort = "num"; render(); };
+render();
+</script>
+
+</body>
+</html>
